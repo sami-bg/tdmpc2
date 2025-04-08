@@ -77,4 +77,7 @@ def parse_cfg(cfg: OmegaConf) -> OmegaConf:
 		cfg.task_dim = 0
 	cfg.tasks = TASK_SET.get(cfg.task, [cfg.task])
 
+	# NOTE Multiply by ensemble size so batch-size in cfg is agnostic to ensemble size
+	cfg.batch_size = cfg.batch_size * cfg.ensemble_size
+
 	return cfg_to_dataclass(cfg)

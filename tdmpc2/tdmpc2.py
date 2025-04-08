@@ -2,6 +2,7 @@ import torch
 import torch.nn.functional as F
 
 from common import math
+from typing import Literal
 from common.scale import RunningScale
 from common.world_model import WorldModel
 from common.layers import api_model_conversion
@@ -25,9 +26,9 @@ class TDMPC2(torch.nn.Module):
 			{'params': self.model._dynamics.parameters()},
 			{'params': self.model._reward.parameters()},
 			{'params': self.model._Qs.parameters()},
-			{'params': self.model._task_emb.parameters() if self.cfg.multitask else []
-			 }
+			{'params': self.model._task_emb.parameters() if self.cfg.multitask else []}
 		], lr=self.cfg.lr, capturable=True)
+
 		self.pi_optim = torch.optim.Adam(self.model._pi.parameters(), lr=self.cfg.lr, eps=1e-5, capturable=True)
 		self.model.eval()
 		self.scale = RunningScale(cfg)
@@ -118,17 +119,27 @@ class TDMPC2(torch.nn.Module):
 		return action[0].cpu()
 
 	@torch.no_grad()
-	def _estimate_value(self, z, actions, task):
+	def _estimate_value(self, z, actions, task, aggregation: Literal['min', 'max', 'avg'] = 'min'):
 		"""Estimate value of a trajectory starting at latent state z and executing given actions."""
 		G, discount = 0, 1
+		z = z.unsqueeze(0).repeat(self.cfg.ensemble_size, 1, 1)
 		for t in range(self.cfg.horizon):
 			reward = math.two_hot_inv(self.model.reward(z, actions[t], task), self.cfg)
-			z = self.model.next(z, actions[t], task)
+			z = self.model.next(z, actions[t].unsqueeze(0).repeat(self.cfg.ensemble_size, 1, 1), task, is_sampling_trajectories=True)
 			G = G + discount * reward
 			discount_update = self.discount[torch.tensor(task)] if self.cfg.multitask else self.discount
 			discount = discount * discount_update
 		action, _ = self.model.pi(z, task)
-		return G + discount * self.model.Q(z, action, task, return_type='avg')
+		r: torch.Tensor = G + discount * self.model.Q(z, action, task)
+
+		if aggregation == 'min':
+			r = torch.min(r, dim=0).values
+		elif aggregation == 'max':
+			r = torch.max(r, dim=0).values
+		else:
+			r = torch.mean(r, dim=0)
+		
+		return r
 
 	@torch.no_grad()
 	def _plan(self, obs, t0=False, eval_mode=False, task=None):
@@ -147,11 +158,18 @@ class TDMPC2(torch.nn.Module):
 		# Sample policy trajectories
 		z = self.model.encode(obs, task)
 		if self.cfg.num_pi_trajs > 0:
-			pi_actions = torch.empty(self.cfg.horizon, self.cfg.num_pi_trajs, self.cfg.action_dim, device=self.device)
-			_z = z.repeat(self.cfg.num_pi_trajs, 1)
+			traj_per_ensemble = self.cfg.num_pi_trajs // self.cfg.ensemble_size
+			pi_actions = torch.empty(
+				self.cfg.horizon, self.cfg.ensemble_size,
+				traj_per_ensemble, self.cfg.action_dim,
+				device=self.device)
+
+			_z = z .repeat(self.cfg.num_pi_trajs, 1)
+			_z = _z.reshape(self.cfg.ensemble_size, traj_per_ensemble, -1)
+			
 			for t in range(self.cfg.horizon-1):
 				pi_actions[t], _ = self.model.pi(_z, task)
-				_z = self.model.next(_z, pi_actions[t], task)
+				_z = self.model.next(_z, pi_actions[t], task, is_sampling_trajectories=True)
 			pi_actions[-1], _ = self.model.pi(_z, task)
 
 		# Initialize state and parameters
@@ -162,8 +180,7 @@ class TDMPC2(torch.nn.Module):
 			mean[:-1] = self._prev_mean[1:]
 		actions = torch.empty(self.cfg.horizon, self.cfg.num_samples, self.cfg.action_dim, device=self.device)
 		if self.cfg.num_pi_trajs > 0:
-			actions[:, :self.cfg.num_pi_trajs] = pi_actions
-
+			actions[:, :self.cfg.num_pi_trajs] = pi_actions.reshape(self.cfg.horizon, self.cfg.num_pi_trajs, self.cfg.action_dim)
 		# Iterate MPPI
 		for _ in range(self.cfg.iterations):
 
@@ -252,6 +269,7 @@ class TDMPC2(torch.nn.Module):
 
 	def _update(self, obs, action, reward, task=None):
 		# Compute targets
+
 		with torch.no_grad():
 			next_z = self.model.encode(obs[1:], task)
 			td_targets = self._td_target(next_z, reward, task)

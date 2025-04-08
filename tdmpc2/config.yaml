@@ -6,7 +6,7 @@ task: dog-run
 obs: state
 
 # evaluation
-checkpoint: ???
+checkpoint: null # Path to a checkpoint file for evaluation, e.g., /path/to/model.pt
 eval_episodes: 10
 eval_freq: 50000
 
@@ -26,14 +26,18 @@ discount_min: 0.95
 discount_max: 0.995
 buffer_size: 1_000_000
 exp_name: default
-data_dir: ???
+data_dir: ./data # Directory for offline data (if used)
+
+# ensemble
+ensemble_size: 5
+
 
 # planning
 mpc: true
 iterations: 6
 num_samples: 512
 num_elites: 64
-num_pi_trajs: 24
+num_pi_trajs: 30
 horizon: 3
 min_std: 0.05
 max_std: 2
@@ -50,7 +54,7 @@ vmin: -10
 vmax: +10
 
 # architecture
-model_size: ???
+model_size: 5 # Model size in millions of parameters {1, 5, 19, 48, 317}. Default for single-task is 5.
 num_enc_layers: 2
 enc_dim: 256
 num_channels: 32
@@ -62,10 +66,10 @@ dropout: 0.01
 simnorm_dim: 8
 
 # logging
-wandb_project: ???
-wandb_entity: ???
+wandb_project: reai-tdmpc2
+wandb_entity: samibg
 wandb_silent: false
-enable_wandb: true
+enable_wandb: false
 save_csv: true
 
 # misc
@@ -73,19 +77,19 @@ save_video: true
 save_agent: true
 seed: 1
 
-# convenience
-work_dir: ???
-task_title: ???
-multitask: ???
-tasks: ???
-obs_shape: ???
-action_dim: ???
-episode_length: ???
-obs_shapes: ???
-action_dims: ???
-episode_lengths: ???
-seed_steps: ???
-bin_size: ???
+# convenience (these are typically filled automatically by the code)
+work_dir: null
+task_title: null
+multitask: null
+tasks: null
+obs_shape: null
+action_dim: null
+episode_length: null
+obs_shapes: null
+action_dims: null
+episode_lengths: null
+seed_steps: null
+bin_size: null
 
 # speedups
 compile: False

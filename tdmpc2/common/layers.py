@@ -27,7 +27,8 @@ class Ensemble(nn.Module):
 			return self.module(*args, **kwargs)
 
 	def forward(self, *args, **kwargs):
-		return torch.vmap(self._call, (0, None), randomness="different")(self.params, *args, **kwargs)
+		batched = kwargs.pop('batched', False)
+		return torch.vmap(self._call, (0, 0 if batched else None), randomness="different")(self.params, *args, **kwargs)
 
 	def __repr__(self):
 		return f'Vectorized {len(self)}x ' + self._repr
