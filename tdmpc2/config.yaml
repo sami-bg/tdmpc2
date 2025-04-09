@@ -42,6 +42,8 @@ horizon: 3
 min_std: 0.05
 max_std: 2
 temperature: 0.5
+ensemble_aggregation: mean
+var_coeff: 0.0
 
 # actor
 log_std_min: -10

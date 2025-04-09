@@ -120,7 +120,6 @@ class WorldModel(nn.Module):
 		"""
 		if self.cfg.multitask:
 			z = self.task_emb(z, task)
-
 		z = torch.cat([z, a], dim=-1)
 		z = self._dynamics(z, batched=self.training or is_sampling_trajectories)
 		return z
@@ -131,9 +130,6 @@ class WorldModel(nn.Module):
 		"""
 		if self.cfg.multitask:
 			z = self.task_emb(z, task)
-
-		if z.ndim == 3:
-			a = a.unsqueeze(0).repeat(self.cfg.ensemble_size, 1, 1)
 
 		z = torch.cat([z, a], dim=-1)
 		return self._reward(z)
@@ -201,8 +197,9 @@ class WorldModel(nn.Module):
 			qnet = self._detach_Qs
 		else:
 			qnet = self._Qs
-		out = qnet(z)
 
+		# NOTE Not batching so that each Q operates on all ensembles
+		out = qnet(z, batched=False)
 		if return_type == 'all':
 			return out
 

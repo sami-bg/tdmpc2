@@ -1,4 +1,5 @@
 import torch
+import numpy as np
 import torch.nn.functional as F
 
 from common import math
@@ -111,38 +112,42 @@ class TDMPC2(torch.nn.Module):
 		if task is not None:
 			task = torch.tensor([task], device=self.device)
 		if self.cfg.mpc:
-			return self.plan(obs, t0=t0, eval_mode=eval_mode, task=task).cpu()
+			action, stats = self.plan(obs, t0=t0, eval_mode=eval_mode, task=task)
+			return action.cpu(), stats
 		z = self.model.encode(obs, task)
 		action, info = self.model.pi(z, task)
+
 		if eval_mode:
 			action = info["mean"]
+
 		return action[0].cpu()
 
 	@torch.no_grad()
-	def _estimate_value(self, z, actions, task, aggregation: Literal['min', 'max', 'avg'] = 'min'):
+	def _estimate_value(self, z, actions, task) -> tuple[torch.Tensor, torch.Tensor]:
 		"""Estimate value of a trajectory starting at latent state z and executing given actions."""
 		G, discount = 0, 1
 		z = z.unsqueeze(0).repeat(self.cfg.ensemble_size, 1, 1)
 		for t in range(self.cfg.horizon):
-			reward = math.two_hot_inv(self.model.reward(z, actions[t], task), self.cfg)
-			z = self.model.next(z, actions[t].unsqueeze(0).repeat(self.cfg.ensemble_size, 1, 1), task, is_sampling_trajectories=True)
+			_actions = actions[t].unsqueeze(0).repeat(self.cfg.ensemble_size, 1, 1)
+			reward = math.two_hot_inv(self.model.reward(z, _actions, task), self.cfg)
+			z = self.model.next(z, _actions, task, is_sampling_trajectories=True)
 			G = G + discount * reward
 			discount_update = self.discount[torch.tensor(task)] if self.cfg.multitask else self.discount
 			discount = discount * discount_update
 		action, _ = self.model.pi(z, task)
 		r: torch.Tensor = G + discount * self.model.Q(z, action, task)
+		var_ = torch.var(r, dim=0)
 
-		if aggregation == 'min':
-			r = torch.min(r, dim=0).values
-		elif aggregation == 'max':
-			r = torch.max(r, dim=0).values
-		else:
-			r = torch.mean(r, dim=0)
+		if self.cfg.ensemble_aggregation == 'min': r = torch.min(r, dim=0).values
+		elif self.cfg.ensemble_aggregation == 'max': r = torch.max(r, dim=0).values
+		else: r = torch.mean(r, dim=0)
 		
-		return r
+		r = r - self.cfg.var_coeff * var_
+
+		return r, var_
 
 	@torch.no_grad()
-	def _plan(self, obs, t0=False, eval_mode=False, task=None):
+	def _plan(self, obs, t0=False, eval_mode=False, task=None) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
 		"""
 		Plan a sequence of actions using the learned world model.
 
@@ -154,6 +159,7 @@ class TDMPC2(torch.nn.Module):
 
 		Returns:
 			torch.Tensor: Action to take in the environment.
+			dict: Dictionary of statistics.
 		"""
 		# Sample policy trajectories
 		z = self.model.encode(obs, task)
@@ -182,7 +188,8 @@ class TDMPC2(torch.nn.Module):
 		if self.cfg.num_pi_trajs > 0:
 			actions[:, :self.cfg.num_pi_trajs] = pi_actions.reshape(self.cfg.horizon, self.cfg.num_pi_trajs, self.cfg.action_dim)
 		# Iterate MPPI
-		for _ in range(self.cfg.iterations):
+		vars_ = torch.empty(self.cfg.iterations, self.cfg.num_samples, device=self.device)
+		for i in range(self.cfg.iterations):
 
 			# Sample actions
 			r = torch.randn(self.cfg.horizon, self.cfg.num_samples-self.cfg.num_pi_trajs, self.cfg.action_dim, device=std.device)
@@ -193,7 +200,10 @@ class TDMPC2(torch.nn.Module):
 				actions = actions * self.model._action_masks[task]
 
 			# Compute elite actions
-			value = self._estimate_value(z, actions, task).nan_to_num(0)
+			value, _var = self._estimate_value(z, actions, task)
+			value = value.nan_to_num(0)
+			breakpoint()
+			vars_[i] = _var.squeeze(-1)
 			elite_idxs = torch.topk(value.squeeze(1), self.cfg.num_elites, dim=0).indices
 			elite_value, elite_actions = value[elite_idxs], actions[:, elite_idxs]
 
@@ -215,7 +225,11 @@ class TDMPC2(torch.nn.Module):
 		if not eval_mode:
 			a = a + std * torch.randn(self.cfg.action_dim, device=std.device)
 		self._prev_mean.copy_(mean)
-		return a.clamp(-1, 1)
+		breakpoint()
+		return a.clamp(-1, 1), {
+			'meanvar': torch.nanmean(vars_.view(-1)),
+			'varvar': torch.var(vars_.view(-1))
+		}
 
 	def update_pi(self, zs, task):
 		"""
@@ -268,8 +282,9 @@ class TDMPC2(torch.nn.Module):
 		return reward + discount * self.model.Q(next_z, action, task, return_type='min', target=True)
 
 	def _update(self, obs, action, reward, task=None):
-		# Compute targets
+		# NOTE Input needs to accomodate ensemble size
 
+		# Compute targets
 		with torch.no_grad():
 			next_z = self.model.encode(obs[1:], task)
 			td_targets = self._td_target(next_z, reward, task)
@@ -278,17 +293,35 @@ class TDMPC2(torch.nn.Module):
 		self.model.train()
 
 		# Latent rollout
-		zs = torch.empty(self.cfg.horizon+1, self.cfg.batch_size, self.cfg.latent_dim, device=self.device)
-		z = self.model.encode(obs[0], task)
+		zs = torch.empty(
+			self.cfg.horizon+1,
+			self.cfg.batch_size // self.cfg.ensemble_size,
+			self.cfg.ensemble_size,
+			self.cfg.latent_dim, device=self.device)
+
+		z = self.model.encode(obs[0].reshape(
+			self.cfg.batch_size // self.cfg.ensemble_size,
+			self.cfg.ensemble_size, -1),
+			task)
+	
 		zs[0] = z
 		consistency_loss = 0
 		for t, (_action, _next_z) in enumerate(zip(action.unbind(0), next_z.unbind(0))):
-			z = self.model.next(z, _action, task)
+			_action = _action.reshape(
+				self.cfg.batch_size // self.cfg.ensemble_size,
+				self.cfg.ensemble_size, -1)
+			_next_z = _next_z.reshape(
+				self.cfg.batch_size // self.cfg.ensemble_size,
+				self.cfg.ensemble_size, -1)
 			consistency_loss = consistency_loss + F.mse_loss(z, _next_z) * self.cfg.rho**t
 			zs[t+1] = z
 
 		# Predictions
 		_zs = zs[:-1]
+		# NOTE To feed ensembled states to non-ensembled models, we reshape back into a giant batch
+		_zs = _zs.reshape(self.cfg.horizon, self.cfg.batch_size, self.cfg.latent_dim)
+		
+		# NOTE Q_ensemble_size x horizon x (batch_size x ensemble_size) x reward_dim
 		qs = self.model.Q(_zs, action, task, return_type='all')
 		reward_preds = self.model.reward(_zs, action, task)
 
@@ -314,6 +347,8 @@ class TDMPC2(torch.nn.Module):
 		self.optim.step()
 		self.optim.zero_grad(set_to_none=True)
 
+		# NOTE Reshape back to original batch size
+		zs = zs.reshape(self.cfg.horizon+1, self.cfg.batch_size, self.cfg.latent_dim)
 		# Update policy
 		pi_info = self.update_pi(zs.detach(), task)
 
