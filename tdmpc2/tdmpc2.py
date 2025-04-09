@@ -40,7 +40,10 @@ class TDMPC2(torch.nn.Module):
 		self._prev_mean = torch.nn.Buffer(torch.zeros(self.cfg.horizon, self.cfg.action_dim, device=self.device))
 		if cfg.compile:
 			print('Compiling update function with torch.compile...')
-			self._update = torch.compile(self._update, mode="reduce-overhead")
+			self._update = torch.compile(
+				self._update,
+				# mode="reduce-overhead",
+			)
 
 	@property
 	def plan(self):
@@ -202,7 +205,6 @@ class TDMPC2(torch.nn.Module):
 			# Compute elite actions
 			value, _var = self._estimate_value(z, actions, task)
 			value = value.nan_to_num(0)
-			breakpoint()
 			vars_[i] = _var.squeeze(-1)
 			elite_idxs = torch.topk(value.squeeze(1), self.cfg.num_elites, dim=0).indices
 			elite_value, elite_actions = value[elite_idxs], actions[:, elite_idxs]
@@ -225,7 +227,7 @@ class TDMPC2(torch.nn.Module):
 		if not eval_mode:
 			a = a + std * torch.randn(self.cfg.action_dim, device=std.device)
 		self._prev_mean.copy_(mean)
-		breakpoint()
+
 		return a.clamp(-1, 1), {
 			'meanvar': torch.nanmean(vars_.view(-1)),
 			'varvar': torch.var(vars_.view(-1))
@@ -382,4 +384,5 @@ class TDMPC2(torch.nn.Module):
 		if task is not None:
 			kwargs["task"] = task
 		torch.compiler.cudagraph_mark_step_begin()
+		
 		return self._update(obs, action, reward, **kwargs)

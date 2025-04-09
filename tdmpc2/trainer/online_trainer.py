@@ -36,8 +36,8 @@ class OnlineTrainer(Trainer):
 				action, stats = self.agent.act(obs, t0=t==0, eval_mode=True)
 				obs, reward, done, info = self.env.step(action)
 				ep_reward += reward
-				ep_meanvars.append(stats['meanvar'])
-				ep_varvars.append(stats['varvar'])
+				ep_meanvars.append(stats['meanvar'].cpu().numpy())
+				ep_varvars.append(stats['varvar'].cpu().numpy())
 				t += 1
 				if self.cfg.save_video:
 					self.logger.video.record(self.env)
@@ -103,7 +103,7 @@ class OnlineTrainer(Trainer):
 
 			# Collect experience
 			if self._step > self.cfg.seed_steps:
-				action = self.agent.act(obs, t0=len(self._tds)==1)
+				action, _ = self.agent.act(obs, t0=len(self._tds)==1)
 			else:
 				action = self.env.rand_act()
 			obs, reward, done, info = self.env.step(action)
