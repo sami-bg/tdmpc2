@@ -164,38 +164,39 @@ class TDMPC2(torch.nn.Module):
 			torch.Tensor: Action to take in the environment.
 			dict: Dictionary of statistics.
 		"""
+		horizon = self.cfg.horizon_eval
 		# Sample policy trajectories
 		z = self.model.encode(obs, task)
 		if self.cfg.num_pi_trajs > 0:
 			traj_per_ensemble = self.cfg.num_pi_trajs // self.cfg.ensemble_size
 			pi_actions = torch.empty(
-				self.cfg.horizon, self.cfg.ensemble_size,
+				horizon, self.cfg.ensemble_size,
 				traj_per_ensemble, self.cfg.action_dim,
 				device=self.device)
 
 			_z = z .repeat(self.cfg.num_pi_trajs, 1)
 			_z = _z.reshape(self.cfg.ensemble_size, traj_per_ensemble, -1)
 			
-			for t in range(self.cfg.horizon-1):
+			for t in range(horizon-1):
 				pi_actions[t], _ = self.model.pi(_z, task)
 				_z = self.model.next(_z, pi_actions[t], task, is_sampling_trajectories=True)
 			pi_actions[-1], _ = self.model.pi(_z, task)
 
 		# Initialize state and parameters
 		z = z.repeat(self.cfg.num_samples, 1)
-		mean = torch.zeros(self.cfg.horizon, self.cfg.action_dim, device=self.device)
-		std = torch.full((self.cfg.horizon, self.cfg.action_dim), self.cfg.max_std, dtype=torch.float, device=self.device)
+		mean = torch.zeros(horizon, self.cfg.action_dim, device=self.device)
+		std = torch.full((horizon, self.cfg.action_dim), self.cfg.max_std, dtype=torch.float, device=self.device)
 		if not t0:
 			mean[:-1] = self._prev_mean[1:]
-		actions = torch.empty(self.cfg.horizon, self.cfg.num_samples, self.cfg.action_dim, device=self.device)
+		actions = torch.empty(horizon, self.cfg.num_samples, self.cfg.action_dim, device=self.device)
 		if self.cfg.num_pi_trajs > 0:
-			actions[:, :self.cfg.num_pi_trajs] = pi_actions.reshape(self.cfg.horizon, self.cfg.num_pi_trajs, self.cfg.action_dim)
+			actions[:, :self.cfg.num_pi_trajs] = pi_actions.reshape(horizon, self.cfg.num_pi_trajs, self.cfg.action_dim)
 		# Iterate MPPI
 		vars_ = torch.empty(self.cfg.iterations, self.cfg.num_samples, device=self.device)
 		for i in range(self.cfg.iterations):
 
 			# Sample actions
-			r = torch.randn(self.cfg.horizon, self.cfg.num_samples-self.cfg.num_pi_trajs, self.cfg.action_dim, device=std.device)
+			r = torch.randn(horizon, self.cfg.num_samples-self.cfg.num_pi_trajs, self.cfg.action_dim, device=std.device)
 			actions_sample = mean.unsqueeze(1) + std.unsqueeze(1) * r
 			actions_sample = actions_sample.clamp(-1, 1)
 			actions[:, self.cfg.num_pi_trajs:] = actions_sample

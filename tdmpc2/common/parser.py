@@ -79,5 +79,6 @@ def parse_cfg(cfg: OmegaConf) -> OmegaConf:
 
 	# NOTE Multiply by ensemble size so batch-size in cfg is agnostic to ensemble size
 	cfg.batch_size = cfg.batch_size * cfg.ensemble_size
+	cfg.horizon_eval = cfg.horizon_eval or cfg.horizon 
 
 	return cfg_to_dataclass(cfg)
