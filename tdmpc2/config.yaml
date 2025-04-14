@@ -29,8 +29,9 @@ exp_name: default
 data_dir: ./data # Directory for offline data (if used)
 
 # ensemble
-ensemble_size: 1
-
+ensemble_size: 2
+ensemble_aggregation: mean
+var_coeff: 0.0
 
 # planning
 mpc: true
@@ -43,8 +44,6 @@ horizon_eval: null
 min_std: 0.05
 max_std: 2
 temperature: 0.5
-ensemble_aggregation: mean
-var_coeff: 0.0
 
 # actor
 log_std_min: -10
@@ -69,11 +68,12 @@ dropout: 0.01
 simnorm_dim: 8
 
 # logging
-wandb_project: reai-tdmpc2
-wandb_entity: samibg
+wandb_project: AW-TDMPC2
+wandb_entity: DanHrmti
 wandb_silent: false
 enable_wandb: true
-save_csv: true
+save_csv: false
+wandb_name_suffix: ""
 
 # misc
 save_video: true

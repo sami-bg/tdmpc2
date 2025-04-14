@@ -298,24 +298,21 @@ class TDMPC2(torch.nn.Module):
 		# Latent rollout
 		zs = torch.empty(
 			self.cfg.horizon+1,
-			self.cfg.batch_size // self.cfg.ensemble_size,
 			self.cfg.ensemble_size,
+			self.cfg.batch_size // self.cfg.ensemble_size,
 			self.cfg.latent_dim, device=self.device)
 
 		z = self.model.encode(obs[0].reshape(
-			self.cfg.batch_size // self.cfg.ensemble_size,
-			self.cfg.ensemble_size, -1),
+			self.cfg.ensemble_size,
+			self.cfg.batch_size // self.cfg.ensemble_size, -1),
 			task)
 	
 		zs[0] = z
 		consistency_loss = 0
 		for t, (_action, _next_z) in enumerate(zip(action.unbind(0), next_z.unbind(0))):
-			_action = _action.reshape(
-				self.cfg.batch_size // self.cfg.ensemble_size,
-				self.cfg.ensemble_size, -1)
-			_next_z = _next_z.reshape(
-				self.cfg.batch_size // self.cfg.ensemble_size,
-				self.cfg.ensemble_size, -1)
+			_action = _action.reshape(self.cfg.ensemble_size, self.cfg.batch_size // self.cfg.ensemble_size, -1)
+			_next_z = _next_z.reshape(self.cfg.ensemble_size, self.cfg.batch_size // self.cfg.ensemble_size, -1)
+			z = self.model.next(z, _action, task)
 			consistency_loss = consistency_loss + F.mse_loss(z, _next_z) * self.cfg.rho**t
 			zs[t+1] = z
 
