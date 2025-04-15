@@ -227,14 +227,12 @@ class Logger:
 
 	def log(self, d, agent, category="train"):
 		assert category in CAT_TO_COLOR.keys(), f"invalid category: {category}"
+		if category in {"train", "eval"}: xkey = "step"
+		elif category == "pretrain": xkey = "iteration"
+
 		if self._wandb:
-			if category in {"train", "eval"}:
-				xkey = "step"
-			elif category == "pretrain":
-				xkey = "iteration"
 			_d = dict()
-			for k, v in d.items():
-				_d[category + "/" + k] = v
+			for k, v in d.items(): _d[category + "/" + k] = v
 			self._wandb.log(_d, step=d[xkey])
 
 		# Save agent at regular intervals if configured
