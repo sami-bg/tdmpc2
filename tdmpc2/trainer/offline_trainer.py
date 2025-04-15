@@ -89,6 +89,6 @@ class OfflineTrainer(Trainer):
 					self.logger.pprint_multitask(metrics, self.cfg)
 					if i > 0:
 						self.logger.save_agent(self.agent, identifier=f'{i}')
-				self.logger.log(metrics, 'pretrain')
+				self.logger.log(metrics, category='pretrain', agent=self.agent)
 			
 		self.logger.finish(self.agent)

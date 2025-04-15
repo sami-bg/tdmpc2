@@ -69,11 +69,13 @@ simnorm_dim: 8
 
 # logging
 wandb_project: AW-TDMPC2
-wandb_entity: DanHrmti
+wandb_entity: samibg
 wandb_silent: false
 enable_wandb: true
 save_csv: false
 wandb_name_suffix: ""
+save_freq: 100000  # Save agent every N steps
+save_best: true   # Whether to save the best performing agent
 
 # misc
 save_video: true

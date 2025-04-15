@@ -114,6 +114,9 @@ class Logger:
 		self._group = cfg_to_group(cfg)
 		self._seed = cfg.seed
 		self._eval = []
+		self._best_reward = float('-inf')  # Track best reward
+		self._save_freq = cfg.save_freq  # Save frequency
+		self._save_best = cfg.save_best  # Whether to save best agent
 		print_run(cfg)
 		self.project = cfg.get("wandb_project", "none")
 		self.entity = cfg.get("wandb_entity", "none")
@@ -154,6 +157,7 @@ class Logger:
 
 	def save_agent(self, agent=None, identifier='final'):
 		if self._save_agent and agent:
+			self._current_agent = agent  # Keep reference to current agent for saving
 			fp = self._model_dir / f'{str(identifier)}.pt'
 			agent.save(fp)
 			if self._wandb:
@@ -221,7 +225,7 @@ class Logger:
 			print(colored(f'  {"metaworld":<22}\tR: {metaworld_reward:.01f}', 'yellow', attrs=['bold']))
 			print(colored(f'  {"metaworld":<22}\tS: {metaworld_success:.02f}', 'yellow', attrs=['bold']))
 
-	def log(self, d, category="train"):
+	def log(self, d, agent, category="train"):
 		assert category in CAT_TO_COLOR.keys(), f"invalid category: {category}"
 		if self._wandb:
 			if category in {"train", "eval"}:
@@ -232,6 +236,18 @@ class Logger:
 			for k, v in d.items():
 				_d[category + "/" + k] = v
 			self._wandb.log(_d, step=d[xkey])
+
+		# Save agent at regular intervals if configured
+		if category in {"train", "eval"} and self._save_agent and d[xkey] % self._save_freq == 0:
+			self.save_agent(agent, identifier=f'step_latest')
+
+		# Track and save best agent
+		if category == "eval" and self._save_agent and self._save_best:
+			current_reward = d.get("episode_reward", float('-inf'))
+			if current_reward > self._best_reward:
+				self._best_reward = current_reward
+				self.save_agent(agent, identifier='best')
+
 		if category == "eval" and self._save_csv:
 			keys = ["step", "episode_reward"]
 			self._eval.append(np.array([d[keys[0]], d[keys[1]]]))
