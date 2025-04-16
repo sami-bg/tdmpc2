@@ -4,21 +4,31 @@ import warnings
 warnings.filterwarnings('ignore')
 
 import hydra
+import torch
 import imageio
 import numpy as np
-import torch
+from pathlib import Path
 from termcolor import colored
 
 from common.parser import parse_cfg
 from common.seed import set_seed
 from envs import make_env
 from tdmpc2 import TDMPC2
+from common.logger import Logger
+from omegaconf import OmegaConf
 
 torch.backends.cudnn.benchmark = True
 
 
+def evaluate_from_checkpoint(checkpoint_path: Path):
+	cfg_dir = checkpoint_path.parent.parent / '.hydra'
+	return hydra.main(config_name='config', config_path=str(cfg_dir))(_evaluate)()
+
+
 @hydra.main(config_name='config', config_path='.')
-def evaluate(cfg: dict):
+def evaluate(cfg: dict): return _evaluate(cfg)
+
+def _evaluate(cfg: OmegaConf):
 	"""
 	Script for evaluating a single-task / multi-task TD-MPC2 checkpoint.
 
@@ -58,6 +68,9 @@ def evaluate(cfg: dict):
 	assert os.path.exists(cfg.checkpoint), f'Checkpoint {cfg.checkpoint} not found! Must be a valid filepath.'
 	agent.load(cfg.checkpoint)
 	
+	### NOTE: To handle logging to wandb without interfering with the training logs (since we use training cfg)
+	cfg.save_agent = False  # NOTE Already saved in training
+
 	# Evaluate
 	if cfg.multitask:
 		print(colored(f'Evaluating agent on {len(cfg.tasks)} tasks:', 'yellow', attrs=['bold']))
@@ -69,6 +82,13 @@ def evaluate(cfg: dict):
 	scores = []
 	tasks = cfg.tasks if cfg.multitask else [cfg.task]
 	for task_idx, task in enumerate(tasks):
+		cfg.task = task
+		cfg.wandb_name_suffix = f'eval_{cfg.checkpoint.split("/")[-1]}_{cfg.wandb_name_suffix}'
+		# NOTE This is because wandb.init gets called in Logger constructor
+		# and we want to have a different wandb run for each task. Otherwise,
+		# one run will have the `task` name in the multitask case but contain
+		# all tasks.
+		logger = Logger(cfg)
 		if not cfg.multitask:
 			task_idx = None
 		ep_rewards, ep_successes = [], []
@@ -77,7 +97,7 @@ def evaluate(cfg: dict):
 			if cfg.save_video:
 				frames = [env.render()]
 			while not done:
-				action = agent.act(obs, t0=t==0, task=task_idx)
+				action, stats = agent.act(obs, t0=t==0, task=task_idx)
 				obs, reward, done, info = env.step(action)
 				ep_reward += reward
 				t += 1
@@ -95,9 +115,19 @@ def evaluate(cfg: dict):
 		print(colored(f'  {task:<22}' \
 			f'\tR: {ep_rewards:.01f}  ' \
 			f'\tS: {ep_successes:.02f}', 'yellow'))
+		logger.log(
+			d={'episode_reward': ep_rewards,  'episode_success': ep_successes, 'step': 0},
+			agent=agent, category='eval')
 	if cfg.multitask:
 		print(colored(f'Normalized score: {np.mean(scores):.02f}', 'yellow', attrs=['bold']))
 
 
 if __name__ == '__main__':
-	evaluate()
+	import sys
+	if any('checkpoint=' in arg for arg in sys.argv[1:]):
+		checkpoint: str = [
+			arg for arg in sys.argv[1:]
+			if 'checkpoint=' in arg
+		][0].replace('checkpoint=', '')
+		evaluate_from_checkpoint(Path(checkpoint))
+	else: evaluate()

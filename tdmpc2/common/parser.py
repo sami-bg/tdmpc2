@@ -4,7 +4,8 @@ from pathlib import Path
 from typing import Any
 
 import hydra
-from omegaconf import OmegaConf
+from omegaconf import OmegaConf, read_write
+from hydra.core.hydra_config import HydraConfig
 
 from common import MODEL_SIZE, TASK_SET
 
@@ -54,7 +55,12 @@ def parse_cfg(cfg: OmegaConf) -> OmegaConf:
 			pass
 
 	# Convenience
-	cfg.work_dir = Path(hydra.utils.get_original_cwd()) / 'logs' / cfg.task / f'ensemble_{cfg.ensemble_size}' / f'var_coeff_{cfg.var_coeff}' / f'seed_{cfg.seed}' / cfg.exp_name
+	# NOTE This makes the agent save the checkpoints in the same place as hydra saves the config.
+	# I am doing this so that we can just pass in the checkpoint path to evaluate.py
+	# instead of having to ensure that our config.yaml is aligned with the checkpoint,
+	# when our usual workflow has us overriding the ensemble_size from the cmd line.
+	cfg.work_dir = Path('.').absolute()
+	# cfg.work_dir = Path(HydraConfig.get().run.dir) / 'logs' / cfg.task / f'ensemble_{cfg.ensemble_size}' / f'var_coeff_{cfg.var_coeff}' / f'seed_{cfg.seed}' / cfg.exp_name
 	cfg.task_title = cfg.task.replace("-", " ").title()
 	cfg.bin_size = (cfg.vmax - cfg.vmin) / (cfg.num_bins-1) # Bin size for discrete regression
 

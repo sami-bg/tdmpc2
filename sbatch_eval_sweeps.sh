@@ -2,15 +2,17 @@
 #SBATCH -o /users/sboughan/reai/tdmpc2/logs/sweep_evals-%j.out
 #SBATCH -e /users/sboughan/reai/tdmpc2/logs/sweep_evals-%j.err
 #SBATCH --job-name=sweep_evals
-#SBATCH --partition=3090-gcondo
+#SBATCH --partition=gpu
 #SBATCH --nodes=1
 #SBATCH -c 6
 #SBATCH --mem=64G
-#SBATCH --time=24:00:00
+#SBATCH --time=01:00:00
 #SBATCH --gpus=1
 
+conda activate tdmpc2
+cd tdmpc2
+
 # Default values
-task=""
 checkpoints=()
 aggregations=(mean)
 horizon_eval=(3 5 7 10 15)
@@ -20,10 +22,6 @@ seeds=(1 2 3)
 # Parse named arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --task)
-            task="$2"
-            shift 2
-            ;;
         --checkpoints)
             shift
             while [[ $# -gt 0 && ! $1 =~ ^-- ]]; do
@@ -71,18 +69,12 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Validate required arguments
-if [ -z "$task" ]; then
-    echo "Error: --task is required"
-    exit 1
-fi
-
 if [ ${#checkpoints[@]} -eq 0 ]; then
     echo "Error: --checkpoints is required"
     exit 1
 fi
 
-conda activate tdmpc2
-cd tdmpc2
+
 
 # Run evaluation for each combination
 for checkpoint in "${checkpoints[@]}"; do
@@ -91,7 +83,6 @@ for checkpoint in "${checkpoints[@]}"; do
             for var in "${var_coeff[@]}"; do
                 for seed in "${seeds[@]}"; do
                     python evaluate.py \
-                        task=$task \
                         checkpoint=$checkpoint \
                         horizon_eval=$h \
                         ensemble_aggregation=$agg \

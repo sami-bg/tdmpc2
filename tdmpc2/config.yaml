@@ -1,6 +1,9 @@
 defaults:
     - override hydra/launcher: submitit_local
 
+hydra:
+    run:
+        dir: outputs/task-${task}_ensemblesize-${ensemble_size}_var_coeff-${var_coeff}/${exp_name}/seed-${seed}
 # environment
 task: dog-run
 obs: state
