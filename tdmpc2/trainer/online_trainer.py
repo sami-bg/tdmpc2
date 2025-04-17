@@ -76,6 +76,7 @@ class OnlineTrainer(Trainer):
 	def train(self):
 		"""Train a TD-MPC2 agent."""
 		train_metrics, done, eval_next = {}, True, False
+		best_reward = -1
 		while self._step <= self.cfg.steps:
 			# Evaluate agent periodically
 			if self._step % self.cfg.eval_freq == 0:
@@ -86,7 +87,12 @@ class OnlineTrainer(Trainer):
 				if eval_next:
 					eval_metrics = self.eval()
 					eval_metrics.update(self.common_metrics())
-					self.logger.log(eval_metrics, category='eval', agent=self.agent)
+					self.logger.log(eval_metrics, 'eval')
+					if self._step > 0:
+						self.logger.save_agent(self.agent, identifier=f'latest')
+						if eval_metrics["episode_reward"] > best_reward:
+							self.logger.save_agent(self.agent, identifier=f'best')
+							best_reward = eval_metrics["episode_reward"]
 					eval_next = False
 
 				if self._step > 0:
