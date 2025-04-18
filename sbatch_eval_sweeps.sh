@@ -6,7 +6,7 @@
 #SBATCH --nodes=1
 #SBATCH -c 6
 #SBATCH --mem=64G
-#SBATCH --time=01:00:00
+#SBATCH --time=12:00:00
 #SBATCH --gpus=1
 
 conda activate tdmpc2
@@ -87,7 +87,8 @@ for checkpoint in "${checkpoints[@]}"; do
                         horizon_eval=$h \
                         ensemble_aggregation=$agg \
                         var_coeff=$var \
-                        seed=$seed
+                        seed=$seed \
+                        compile=False
                 done
             done
         done

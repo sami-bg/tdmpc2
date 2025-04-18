@@ -50,6 +50,7 @@ def _evaluate(cfg: OmegaConf):
 	```
 	"""
 	assert torch.cuda.is_available()
+	eval_results_path = Path(hydra.utils.get_original_cwd()).absolute() / 'evaluate_results.csv'
 	assert cfg.eval_episodes > 0, 'Must evaluate at least 1 episode.'
 	cfg = parse_cfg(cfg)
 	set_seed(cfg.seed)
@@ -81,6 +82,9 @@ def _evaluate(cfg: OmegaConf):
 		os.makedirs(video_dir, exist_ok=True)
 	scores = []
 	tasks = cfg.tasks if cfg.multitask else [cfg.task]
+	if not eval_results_path.exists():
+		print(f'aggregation,horizon_eval,var_coeff,ensemble_size,seed,task,reward,success', file=open(eval_results_path, 'a'))
+
 	for task_idx, task in enumerate(tasks):
 		cfg.task = task
 		cfg.wandb_name_suffix = f'eval_{cfg.checkpoint.split("/")[-1]}_{cfg.wandb_name_suffix}'
@@ -112,12 +116,14 @@ def _evaluate(cfg: OmegaConf):
 		ep_successes = np.mean(ep_successes)
 		if cfg.multitask:
 			scores.append(ep_successes*100 if task.startswith('mw-') else ep_rewards/10)
+		# NOTE This saves to file
+		print(f'{cfg.ensemble_aggregation},{cfg.horizon_eval},{cfg.var_coeff},{cfg.ensemble_size},{cfg.seed},{task},'
+			f'{ep_rewards:.01f},{ep_successes:.02f}', file=open(eval_results_path, 'a'))
+
 		print(colored(f'  {task:<22}' \
 			f'\tR: {ep_rewards:.01f}  ' \
 			f'\tS: {ep_successes:.02f}', 'yellow'))
-		logger.log(
-			d={'episode_reward': ep_rewards,  'episode_success': ep_successes, 'step': 0},
-			agent=agent, category='eval')
+
 	if cfg.multitask:
 		print(colored(f'Normalized score: {np.mean(scores):.02f}', 'yellow', attrs=['bold']))
 
