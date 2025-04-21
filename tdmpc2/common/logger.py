@@ -221,7 +221,7 @@ class Logger:
 			print(colored(f'  {"metaworld":<22}\tR: {metaworld_reward:.01f}', 'yellow', attrs=['bold']))
 			print(colored(f'  {"metaworld":<22}\tS: {metaworld_success:.02f}', 'yellow', attrs=['bold']))
 
-	def log(self, d, agent, category="train"):
+	def log(self, d, category="train"):
 		assert category in CAT_TO_COLOR.keys(), f"invalid category: {category}"
 		if category in {"train", "eval"}: xkey = "step"
 		elif category == "pretrain": xkey = "iteration"
