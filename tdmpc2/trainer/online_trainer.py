@@ -87,7 +87,7 @@ class OnlineTrainer(Trainer):
 				if eval_next:
 					eval_metrics = self.eval()
 					eval_metrics.update(self.common_metrics())
-					self.logger.log(eval_metrics, 'eval')
+					self.logger.log(eval_metrics, category='eval')
 					if self._step > 0:
 						self.logger.save_agent(self.agent, identifier=f'latest')
 						if eval_metrics["episode_reward"] > best_reward:
@@ -101,7 +101,7 @@ class OnlineTrainer(Trainer):
 						episode_success=info['success'],
 					)
 					train_metrics.update(self.common_metrics())
-					self.logger.log(train_metrics, category='train', agent=self.agent)
+					self.logger.log(train_metrics, category='train')
 					self._ep_idx = self.buffer.add(torch.cat(self._tds))
 
 				obs = self.env.reset()
