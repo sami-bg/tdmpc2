@@ -2,7 +2,7 @@ defaults:
     - override hydra/launcher: submitit_local
 
 # environment
-task: dog-run
+task: humanoid-run
 obs: state
 
 # evaluation
@@ -11,7 +11,7 @@ eval_episodes: 10
 eval_freq: 50000
 
 # training
-steps: 10_000_000
+steps: 4_000_000
 batch_size: 256
 reward_coef: 0.1
 value_coef: 0.1
@@ -69,7 +69,7 @@ dropout: 0.01
 simnorm_dim: 8
 
 # logging
-wandb_project: reai-tdmpc2
+wandb_project: AW-TDMPC2
 wandb_entity: samibg
 wandb_silent: false
 enable_wandb: true
