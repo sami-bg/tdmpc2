@@ -81,4 +81,10 @@ def parse_cfg(cfg: OmegaConf) -> OmegaConf:
 	cfg.batch_size = cfg.batch_size * cfg.ensemble_size
 	cfg.horizon_eval = cfg.horizon_eval or cfg.horizon 
 
+	# --- to evaluate whether gains are from training stability or from ensembles 
+	if cfg.ensemble_keep_count is not None:
+		assert cfg.ensemble_keep_count > 0
+		assert cfg.ensemble_keep_idxs is not None
+		assert len(cfg.ensemble_keep_idxs) == cfg.ensemble_keep_count
+
 	return cfg_to_dataclass(cfg)

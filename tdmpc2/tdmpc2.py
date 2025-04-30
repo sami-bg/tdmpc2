@@ -1,5 +1,6 @@
 import torch
 import numpy as np
+from copy import deepcopy
 import torch.nn.functional as F
 
 from common import math
@@ -81,7 +82,7 @@ class TDMPC2(torch.nn.Module):
 		"""
 		torch.save({"model": self.model.state_dict()}, fp)
 
-	def load(self, fp):
+	def load(self, fp, num_ensembles_keep=None, ensemble_idxs=None):
 		"""
 		Load a saved state dict from filepath (or dictionary) into current agent.
 
@@ -94,7 +95,33 @@ class TDMPC2(torch.nn.Module):
 			state_dict = torch.load(fp, map_location=torch.get_default_device(), weights_only=False)
 		state_dict = state_dict["model"] if "model" in state_dict else state_dict
 		state_dict = api_model_conversion(self.model.state_dict(), state_dict)
+
 		self.model.load_state_dict(state_dict)
+
+		if num_ensembles_keep is not None and ensemble_idxs is not None:
+			assert num_ensembles_keep is not None and ensemble_idxs is not None
+			new_cfg = deepcopy(self.cfg)
+			new_cfg.ensemble_size = num_ensembles_keep
+			new_model = WorldModel(new_cfg).to(self.device)
+			# modify state dict to only contain the specified ensembles
+			new_dynamics_state_dict = {}
+			dynamics_state_dict = {k:v for k,v in state_dict.items() if k.startswith('_dynamics.')}
+			for k,v in dynamics_state_dict.items():
+				if 'weight' in k or 'bias' in k:
+					# the weights of the ensemble is basically tensor of shape (ensemble_size, 512, 512)
+					# so we need to select the specified ensembles
+					new_v = v[torch.tensor(ensemble_idxs)]
+					new_dynamics_state_dict[k] = new_v
+			dynamics_state_dict.update(new_dynamics_state_dict)
+			# NOTE we have '_dynamics.params.__batch_size' which is a torch.Size([3]) object for ensemble_size 3
+			# This corresponds to the number of ensembles in the original model.
+			dynamics_state_dict['_dynamics.params.__batch_size'] = torch.Size([num_ensembles_keep])
+			dynamics_state_dict = {k.removeprefix('_dynamics.'):v for k,v in dynamics_state_dict.items()}
+			new_model._dynamics.load_state_dict(dynamics_state_dict)
+			print(f'Replacing dynamics with {num_ensembles_keep} ensembles')
+			self.model = new_model
+			self.cfg.ensemble_size = num_ensembles_keep
+
 		return
 
 	@torch.no_grad()

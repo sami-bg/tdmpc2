@@ -67,7 +67,7 @@ def _evaluate(cfg: OmegaConf):
 	# Load agent
 	agent = TDMPC2(cfg)
 	assert os.path.exists(cfg.checkpoint), f'Checkpoint {cfg.checkpoint} not found! Must be a valid filepath.'
-	agent.load(cfg.checkpoint)
+	agent.load(cfg.checkpoint, num_ensembles_keep=cfg.ensemble_keep_count, ensemble_idxs=cfg.ensemble_keep_idxs)
 	
 	### NOTE: To handle logging to wandb without interfering with the training logs (since we use training cfg)
 	cfg.save_agent = False  # NOTE Already saved in training
