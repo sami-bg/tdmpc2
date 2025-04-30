@@ -198,7 +198,6 @@ def main(args):
 
 if __name__ == '__main__':
     import sys
-    sys.argv[1:] = ['--subdir', 'train', '--metrics', 'grad_norm', 'episode_reward']
     args = parse_args()
     main(args)
 
