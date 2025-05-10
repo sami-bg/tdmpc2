@@ -25,26 +25,35 @@ class OnlineTrainer(Trainer):
 
 	def eval(self):
 		"""Evaluate a TD-MPC2 agent."""
-		ep_rewards, ep_successes = [], []
+		ep_rewards, ep_successes, ensemble_meanvars, ensemble_varvars = [], [], [], []
 		for i in range(self.cfg.eval_episodes):
 			obs, done, ep_reward, t = self.env.reset(), False, 0, 0
+			ep_meanvars, ep_varvars = [], []
 			if self.cfg.save_video:
 				self.logger.video.init(self.env, enabled=(i==0))
 			while not done:
 				torch.compiler.cudagraph_mark_step_begin()
-				action = self.agent.act(obs, t0=t==0, eval_mode=True)
+				action, stats = self.agent.act(obs, t0=t==0, eval_mode=True)
 				obs, reward, done, info = self.env.step(action)
 				ep_reward += reward
+				ep_meanvars.append(stats['meanvar'].cpu().numpy())
+				ep_varvars.append(stats['varvar'].cpu().numpy())
 				t += 1
 				if self.cfg.save_video:
 					self.logger.video.record(self.env)
+
 			ep_rewards.append(ep_reward)
 			ep_successes.append(info['success'])
+			ensemble_meanvars.append(np.nanmean(ep_meanvars))
+			ensemble_varvars.append(np.nanmean(ep_varvars))
+
 			if self.cfg.save_video:
 				self.logger.video.save(self._step)
 		return dict(
 			episode_reward=np.nanmean(ep_rewards),
 			episode_success=np.nanmean(ep_successes),
+			ensemble_meanvar=np.nanmean(ensemble_meanvars),  # NOTE mean of the variances across ensembles across episodes
+			ensemble_varvar=np.nanmean(ensemble_varvars),    # NOTE variance of the variances across ensembles across episodes
 		)
 
 	def to_td(self, obs, action=None, reward=None):
@@ -94,7 +103,7 @@ class OnlineTrainer(Trainer):
 
 			# Collect experience
 			if self._step > self.cfg.seed_steps:
-				action = self.agent.act(obs, t0=len(self._tds)==1)
+				action, _ = self.agent.act(obs, t0=len(self._tds)==1)
 			else:
 				action = self.env.rand_act()
 			obs, reward, done, info = self.env.step(action)

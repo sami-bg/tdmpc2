@@ -65,6 +65,7 @@ def make_env(cfg):
 			try:
 				env = fn(cfg)
 			except ValueError:
+				print(f'cfg not for {fn}')
 				pass
 		if env is None:
 			raise ValueError(f'Failed to make environment "{cfg.task}": please verify that dependencies are installed and that the task exists.')

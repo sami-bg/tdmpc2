@@ -27,7 +27,15 @@ class Ensemble(nn.Module):
 			return self.module(*args, **kwargs)
 
 	def forward(self, *args, **kwargs):
-		return torch.vmap(self._call, (0, None), randomness="different")(self.params, *args, **kwargs)
+		batched = kwargs.pop('batched', False)
+		# ensemble size is 5
+		# 1000, 5, ....
+		# (0, 0)
+		# (200, 1)
+		# (0, None)
+		# (200, 5)
+		r = torch.vmap(self._call, (0, 0 if batched else None), randomness="different")(self.params, *args, **kwargs)
+		return r
 
 	def __repr__(self):
 		return f'Vectorized {len(self)}x ' + self._repr
